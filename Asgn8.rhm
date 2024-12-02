@@ -1,0 +1,88 @@
+#lang rhombus
+
+// Assignment 8
+
+// Data Definitions
+
+// ExprC type
+class ExprC():
+  nonfinal
+// numC is a number
+class NumC(n :~ Real):
+  extends ExprC
+// strC represents string literals
+class StrC(s :~ String):
+  extends ExprC
+// ifC represents an if statement
+class IfC(test :~ ExprC, then :~ ExprC, else :~ ExprC):
+  extends ExprC
+// appC represents a function application
+class AppC(fun_expr :~ ExprC, args :~ List): // how to annotate list type?
+  extends ExprC
+// lamC represents an anonymous function
+class LamC(args :~ List, body :~ ExprC):
+  extends ExprC
+  
+// Binding represents a bind of a name to a value
+class Binding(name :~ Symbol, value)
+// Environment represents a list of bindings and contains methods to lookup symbols for vars and extend the env
+class Environment(bindings :~ List):
+  method lookup(s :~ Symbol):
+    match bindings
+    | List.empty:
+        error(~who: #'lookup, "AAQZ: name not found in lookup")
+    | ~else:
+        cond
+        | s === List.first(bindings).name:
+            List.first(bindings).value
+        | ~else: 
+            Environment(List.rest(bindings))
+            
+  
+  method extend(func_args :~ List, app_args :~ List):
+    -1
+    
+// Value type, contains number, boolean, string, closure, primitive
+class Value():
+  nonfinal
+// numV represents a number value
+class NumV(n :~ Real):
+  extends Value
+// strV represents a string value
+class StrV(s :~ String):
+  extends Value
+// boolV represents a boolean value
+class BoolV(b :~ Boolean):
+  extends Value
+// closV represents a function as a value
+class CloV(args :~ List, body :~ ExprC, env :~ Environment):
+  extends Value
+//  primV represents a primitive function
+class PrimV(op :~ Symbol):
+  extends Value
+  method evaluate(args :~ List):
+    -1
+
+def top_env = Environment(
+  [
+    Binding(#'true, BoolV(#true)),
+    Binding(#'false, BoolV(#false)),
+    Binding(Symbol.from_string("+"), PrimV(Symbol.from_string("+"))),
+    Binding(Symbol.from_string("-"), PrimV(Symbol.from_string("-"))),
+    Binding(Symbol.from_string("*"), PrimV(Symbol.from_string("*"))),
+    Binding(Symbol.from_string("/"), PrimV(Symbol.from_string("/"))),
+    Binding(Symbol.from_string("<="), PrimV(Symbol.from_string("<="))),
+    Binding(Symbol.from_string("equal?"), PrimV(Symbol.from_string("equal?"))),
+    Binding(#'println, PrimV(#'println)),
+    Binding(Symbol.from_string("read-num"), PrimV(Symbol.from_string("read-num"))),
+    Binding(Symbol.from_string("read-str"), PrimV(Symbol.from_string("read-str"))),
+    Binding(#'seq, PrimV(#'seq)),
+    Binding(Symbol.from_string("++"), PrimV(Symbol.from_string("++")))
+  ])
+
+// Test Cases
+def num = NumC(3)
+check num.n ~is 3
+def num2 = NumC(4)
+check num.n + num2.n ~is 7
+
