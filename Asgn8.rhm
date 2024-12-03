@@ -22,25 +22,30 @@ class AppC(fun_expr :~ ExprC, args :~ List): // how to annotate list type?
 // lamC represents an anonymous function
 class LamC(args :~ List, body :~ ExprC):
   extends ExprC
+class IdC(s :~ Symbol):
+  extends ExprC
   
 // Binding represents a bind of a name to a value
 class Binding(name :~ Symbol, value)
 // Environment represents a list of bindings and contains methods to lookup symbols for vars and extend the env
 class Environment(bindings :~ List):
   method lookup(s :~ Symbol):
-    match bindings
-    | List.empty:
-        error(~who: #'lookup, "AAQZ: name not found in lookup")
-    | ~else:
-        cond
-        | s === List.first(bindings).name:
-            List.first(bindings).value
-        | ~else: 
-            Environment(List.rest(bindings))
+    fun lookup_helper(binding_list :~ List):
+      match binding_list
+      | List.empty:
+          error(~who: #'lookup, "AAQZ: name not found in lookup")
+      | ~else:
+          cond
+          | s === List.first(binding_list).name:
+              List.first(binding_list).value
+          | ~else:
+              lookup_helper(List.rest(binding_list))
+    lookup_helper(bindings.copy().to_list())
             
   
   method extend(func_args :~ List, app_args :~ List):
     -1
+    
     
 // Value type, contains number, boolean, string, closure, primitive
 class Value():
@@ -61,7 +66,76 @@ class CloV(args :~ List, body :~ ExprC, env :~ Environment):
 class PrimV(op :~ Symbol):
   extends Value
   method evaluate(args :~ List):
-    -1
+    match op
+    | #'#{+}:
+        match args
+        | List(NumV(l), NumV(r)):
+            NumV(l+r)
+        | _:
+            error(~who: #'PrimV.evaluate, "AAQZ: wrong types for +")
+    | #'#{-}:
+        match args
+        | List(NumV(l), NumV(r)):
+            NumV(l-r)
+        | _:
+            error(~who: #'PrimV.evaluate, "AAQZ: wrong types for -")
+    | #'#{*}:
+        match args
+        | List(NumV(l), NumV(r)):
+            NumV(l*r)
+        | _:
+            error(~who: #'PrimV.evaluate, "AAQZ: wrong types for *")
+    | #'#{/}:
+        match args
+        | List(NumV(l), NumV(r)):
+            cond
+            | r == 0:
+                error(~who: #'PrimV.evaluate, "AAQZ: division by zero")
+            | ~else:
+                NumV(l/r)
+        | _:
+            error(~who: #'PrimV.evaluate, "AAQZ: wrong types for /")
+    | #'#{<=}:
+        match args
+        | List(NumV(l), NumV(r)):
+            BoolV(l <= r)
+        | _:
+            error(~who: #'PrimV.evaluate, "AAQZ: wrong types for <=")
+    | #'#{equal?}:
+        match args
+        | List(NumV(l), NumV(r)):
+            BoolV(l == r)
+        | List(StrV(l), StrV(r)):
+            BoolV(l == r)
+        | List(BoolV(l), BoolV(r)):
+            BoolV(l == r)
+        | _:
+            BoolV(#false)
+    | #'println:
+        match args
+        | List(StrV(s)):
+            println(s)
+            BoolV(#true)
+        | _:
+            error(~who: #'PrimV.evaluate, "AAQZ: wrong type for println")
+    // https://docs.racket-lang.org/rhombus-reference/Input_Ports.html
+    | #'#{read-num}:
+        error(~who: #'PrimV.evaluate, "AAQZ: unimplemented")
+    | #'#{read-str}:
+        error(~who: #'PrimV.evaluate, "AAQZ: unimplemented")
+        
+    | #'seq:
+        cond
+        | args.length() == 0:
+            error(~who: #'PrimV.evaluate, "AAQZ: seq requires at least one expression")
+        | ~else:
+            List.last(args)
+
+    // https://docs.racket-lang.org/rhombus-reference/Strings.html
+    | #'#{++}:
+        error(~who: #'PrimV.evaluate, "AAQZ: unimplemented")
+        
+       
 
 def top_env = Environment(
   [
@@ -80,9 +154,94 @@ def top_env = Environment(
     Binding(Symbol.from_string("++"), PrimV(Symbol.from_string("++")))
   ])
 
-// Test Cases
-def num = NumC(3)
-check num.n ~is 3
-def num2 = NumC(4)
-check num.n + num2.n ~is 7
 
+
+fun interp(e :~ ExprC, env :~ Environment):
+  match e
+  | NumC(n):
+      NumV(n)
+  | StrC(s):
+      StrV(s)
+  | IdC(#'error):
+      error(~who: #'interp, "AAQZ: user error")
+  | IdC(s):
+      env.lookup(s)
+  | IfC(test, then, else):
+      match interp(test, env)
+      | BoolV(b):
+          cond
+          | b:
+              interp(then, env)
+          | ~else:
+              interp(else, env)
+      | _:
+          error(~who: #'interp, "AAQZ: wrong types for conditional test")
+  | LamC(args, body):
+      CloV(args, body, env)
+  | AppC(f_expr, args):
+      match interp(f_expr, env)
+      | CloV(clos_args, body, clos_env):
+          cond
+          | clos_args.length() != args.length():
+              error(~who: #'interp, "AAQZ: argument count mismatch")
+          | ~else:
+              interp(body, env.extend(clos_args, List.map(args, (interp(_, env))), clos_env))
+      | PrimV(op):
+          PrimV(op).evaluate(List.map(args, (interp(_, env))))
+      | _:
+          error(~who: #'interp, "AAQZ: function application did not receive valid operator")
+ 
+
+// Test Cases
+
+// Interp Functionality
+check interp(NumC(4), top_env) ~is NumV(4)
+check interp(StrC("hello"), top_env) ~is StrV("hello")
+check interp(IdC(#'true), top_env) ~is BoolV(#true)
+check interp(IdC(#'false), top_env) ~is BoolV(#false)
+check interp(IfC(IdC(#'true), NumC(10), NumC(20)), top_env) ~is NumV(10)
+check interp(IfC(IdC(#'false), NumC(10), NumC(20)), top_env) ~is NumV(20)
+check interp(AppC(IdC((Symbol.from_string("+"))), List(NumC(6), NumC(2))), top_env) ~is NumV(8)
+check interp(AppC(IdC(Symbol.from_string("-")), List(NumC(6), NumC(2))), top_env) ~is NumV(4)
+check interp(AppC(IdC(Symbol.from_string("*")), List(NumC(6), NumC(2))), top_env) ~is NumV(12)
+check interp(AppC(IdC(Symbol.from_string("/")), List(NumC(6), NumC(2))), top_env) ~is NumV(3)
+check interp(AppC(IdC(Symbol.from_string("<=")), List(NumC(2), NumC(6))), top_env) ~is BoolV(#true)
+check interp(AppC(IdC(Symbol.from_string("<=")), List(NumC(6), NumC(2))), top_env) ~is BoolV(#false)
+check interp(AppC(IdC(Symbol.from_string("equal?")), List(NumC(2), NumC(2))), top_env) ~is BoolV(#true)
+check interp(AppC(IdC(Symbol.from_string("equal?")), List(NumC(2), NumC(3))), top_env) ~is BoolV(#false)
+check interp(AppC(IdC(Symbol.from_string("equal?")), List(StrC("hello"), StrC("hello"))), top_env) ~is BoolV(#true)
+check interp(AppC(IdC(Symbol.from_string("equal?")), List(StrC("hello"), StrC("world"))), top_env) ~is BoolV(#false)
+check interp(AppC(IdC(Symbol.from_string("println")), List(StrC("hello"))), top_env) ~is BoolV(#true)
+check interp(AppC(IdC(Symbol.from_string("println")), List(StrC("world"))), top_env) ~is BoolV(#true)
+check interp(AppC(IdC(#'seq), List(NumC(1), NumC(2), NumC(3))), top_env) ~is NumV(3)
+
+// Interp Errors
+check:
+  interp(IdC(#'error), top_env)
+  ~throws "AAQZ: user error"
+check:
+  interp(IdC(#'undefined), top_env)
+  ~throws "AAQZ: name not found in lookup"
+  
+/*
+check:
+  interp(IfC(NumC(10), NumC(10), StrC("hello")), top_env)
+  ~throws "AAQZ: wrong types for conditional test"
+check:
+  interp(AppC(IdC((Symbol.from_string("+"))), List(NumC(6), StrC("hello"))), top_env)
+  ~throws "AAQZ: wrong types for +"
+check:
+  interp(AppC(IdC((Symbol.from_string("-"))), List(NumC(6), StrC("hello"))), top_env)
+  ~throws "AAQZ: wrong types for -"
+check:
+  interp(AppC(IdC((Symbol.from_string("*"))), List(NumC(6), StrC("hello"))), top_env)
+  ~throws "AAQZ: wrong types for *"
+check:
+  interp(AppC(IdC((Symbol.from_string("/"))), List(NumC(6), StrC("hello"))), top_env)
+  ~throws "AAQZ: wrong types for /"
+check:
+  interp(AppC(IdC(Symbol.from_string("<=")), List(StrC("hello"))), top_env)
+  ~throws "AAQZ: wrong types for <="
+*/
+
+                                                     
