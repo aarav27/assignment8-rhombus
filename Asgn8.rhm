@@ -24,12 +24,15 @@ class LamC(args :~ List, body :~ ExprC):
   extends ExprC
 class IdC(s :~ Symbol):
   extends ExprC
-  
+
+
+
+
+
 // Binding represents a bind of a name to a value
 class Binding(name :~ Symbol, value)
 // Environment represents a list of bindings and contains methods to lookup symbols for vars and extend the env
 class Environment(bindings :~ List):
-  
   // Lookup: looks up the symbol in the environment
   method lookup(s :~ Symbol):
     fun lookup_helper(binding_list :~ List):
@@ -170,6 +173,7 @@ def top_env = Environment(
   ])
 
 
+
 // Interp: Interprets an expression into a value
 fun interp(e :~ ExprC, env :~ Environment):
   //print(e, "\n")
@@ -210,7 +214,62 @@ fun interp(e :~ ExprC, env :~ Environment):
           error(~who: #'interp, "AAQZ: function application did not receive valid operator")
 
 
+//Parse: parse an expression and convert it into an AST
+fun parse(sexp :~ Any): 
+  match sexp
+  | num :: Real: NumC(num)
+  | str :: String: StrC(str)
+  | sym :: Symbol: IdC(sym)
+  | List(#'if , test, then, else):
+      IfC(parse(test), parse(then), parse(else))
+  | List(s, args, ...):
+      AppC(parse(s), [parse(args), ...] )
+  | List(args, ... , '=>' , body):
+      LamC(checkDupe([checkType(args), ...]), parse(body))
+  | other:
+      error(~who: #'interp, "AAQZ: improper format")
 
+
+//takes in an expression and return the interpreted value based on AAQZ5 syntax
+fun topInterp(sexp :~ Any):
+  serialize(interp(parse(sexp), top_env))
+
+//helps check if an argument is a symbol, return error if not
+fun checkType(maybeSym :~ Any):
+  if maybeSym :: Symbol
+  |  maybeSym
+  |  error(~who: #'interp, "AAQZ: non symbol as argument name")
+
+//takes in a list and see if duplicates existed in the list
+fun checkDupe(args :~ List):
+  match args
+  | List(): List()
+  | List.cons(first, rest): 
+      List.cons(dupeHelper(first, rest), checkDupe(rest))
+
+//helps parse through function arguments to see if newly
+//added argument is a duplicate of existing ones
+fun dupeHelper(new :~ Any, existing :~ List):
+  match existing
+  | List(): new
+  | List.cons(first, rest):
+      if new == first
+      |  error(~who: #'interp, "AAQZ: duplicate argument")
+      |  dupeHelper(new, rest)
+
+//serialize a value into more readable format
+fun serialize(v :~ Value):
+  match v
+  | CloV(a , b , c): "#<procedure>"
+  | PrimV(a): "#<primop>"
+  | NumV(n):
+      n
+  | StrV(s):
+      "/" +& s +& "/"
+  | BoolV(b):
+      if b
+      | "true"
+      | "false"
 
 // Test Cases
 
@@ -240,9 +299,18 @@ check interp(AppC(IdC(#'seq), List(NumC(1), NumC(2), NumC(3))), top_env) ~is Num
 
 
 check interp(AppC(LamC(List(#'x, #'y), AppC(IdC(Symbol.from_string("+")), List(IdC(#'x), IdC(#'y)))), List(NumC(5), NumC(7))), top_env) ~is NumV(12)
+check topInterp(List(Symbol.from_string("+"), 3, 4)) ~is 7
+check topInterp(7) ~is 7
+check topInterp("stuff") ~is "/stuff/"
+check topInterp(Symbol.from_string("+")) ~is "#<primop>"
+check topInterp(List(#'if,
+                     List(Symbol.from_string("equal?"), List(Symbol.from_string("+"), 3, 4), 7), 
+                     7, 
+                     8)) ~is 7
 
 
-// Interp Errors
+
+// Interp Errors 
 check:
   interp(IdC(#'error), top_env)
   ~throws "AAQZ: user error"
@@ -287,6 +355,10 @@ check:
   ~throws "AAQZ: seq requires at least one expression"
 
 
+
+
  
 
                                                      
+
+
